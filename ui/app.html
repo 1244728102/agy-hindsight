@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AGY 长期记忆 (Hindsight)</title>
+<style>
+  :root {
+    --bg-1: var(--color-background-primary, #0a0f1c);
+    --bg-2: var(--color-background-secondary, #111827);
+    --bg-3: var(--color-background-tertiary, #182235);
+    --fg-1: var(--color-text-primary, #e5e7eb);
+    --fg-2: var(--color-text-secondary, #94a3b8);
+    --bd-1: var(--color-border-primary, #1f2b42);
+    --accent: #8b5cf6;
+    --font: var(--font-sans, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif);
+    --mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 0; background: var(--bg-1); color: var(--fg-1); font-family: var(--font); font-size: 12.5px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: var(--bg-2); border-bottom: 1px solid var(--bd-1); flex-wrap: wrap; }
+  .main { padding: 14px; display: flex; flex-direction: column; gap: 12px; max-width: 1100px; margin: 0 auto; }
+  .card { background: var(--bg-2); border: 1px solid var(--bd-1); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  input, select, textarea, button.btn { background: var(--bg-3); color: var(--fg-1); border: 1px solid var(--bd-1); border-radius: 6px; padding: 5px 8px; font-size: 12px; font-family: inherit; }
+  button.btn { cursor: pointer; }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; background: var(--bg-3); border: 1px solid var(--bd-1); color: var(--fg-2); }
+  .item { background: var(--bg-3); border: 1px solid var(--bd-1); border-radius: 8px; padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; }
+  .item:hover { border-color: var(--accent); }
+  pre { margin: 0; background: var(--bg-1); border: 1px solid var(--bd-1); border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; max-height: 260px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="row"><b>🧠 AGY 长期记忆 (Hindsight)</b><span class="badge" id="stat-badge">--</span></div>
+  <div class="row">
+    <button class="btn" id="ingest-btn">索引历史会话</button>
+    <button class="btn primary" id="new-btn">+ 新建知识页</button>
+    <button class="btn" id="ref-btn">刷新</button>
+  </div>
+</div>
+<div class="main" id="main"></div>
+
+<script type="module">
+/*__EXT_APPS_SDK__*/
+
+const app = new App({ name: 'AGY 长期记忆', version: '0.1.0' }, {});
+const state = { summary: null, recall: null, activePage: null, showNew: false, query: '' };
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function applyTheme(ctx) {
+  if (ctx?.theme) applyDocumentTheme(ctx.theme);
+  if (ctx?.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+}
+app.onhostcontextchanged = applyTheme;
+
+app.ontoolresult = (res) => {
+  const sc = res?.structuredContent;
+  if (!sc) return;
+  if (sc.summary) state.summary = sc.summary;
+  if (sc.recall) state.recall = sc.recall;
+  if (sc.page) state.activePage = sc.page;
+  render();
+};
+
+async function callM(name, args = {}) {
+  const r = await app.callServerTool({ name, arguments: args });
+  return r?.structuredContent || {};
+}
+
+async function refresh() {
+  const sc = await callM('hindsight_open_ui', {});
+  if (sc.summary) state.summary = sc.summary;
+  render();
+}
+
+function render() {
+  const s = state.summary || { page_count: 0, memory_count: 0, pages: [] };
+  document.getElementById('stat-badge').textContent = `${s.page_count} 知识页 · ${s.memory_count} 条记忆`;
+
+  const m = document.getElementById('main');
+  m.innerHTML = `
+    <div class="card">
+      <div class="row">
+        <input id="q-input" placeholder="检索知识页或历史对话记忆..." value="${esc(state.query)}" style="flex:1" />
+        <button class="btn primary" id="q-btn">召回检索</button>
+        ${state.recall ? `<button class="btn" id="q-clr">清除</button>` : ''}
+      </div>
+    </div>
+
+    ${state.showNew ? `
+      <div class="card">
+        <div class="row" style="justify-content:space-between"><b>新建 / 更新知识页</b><button class="btn" id="n-close">取消</button></div>
+        <div class="row">
+          <input id="n-title" placeholder="标题（如：接口重试白名单规范）" style="flex:1" />
+          <select id="n-cat"><option value="architecture">architecture (架构)</option><option value="conventions">conventions (规范)</option><option value="decisions">decisions (决策)</option><option value="initiatives">initiatives (进行中)</option></select>
+          <input id="n-proj" value="default" placeholder="项目名" style="width:120px" />
+        </div>
+        <textarea id="n-content" rows="5" placeholder="记录项目决策、约定或避坑指南..."></textarea>
+        <div class="row" style="justify-content:flex-end"><button class="btn primary" id="n-save">保存到记忆库</button></div>
+      </div>
+    ` : ''}
+
+    ${state.activePage ? `
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <b>📖 ${esc(state.activePage.title)} <span class="badge">${esc(state.activePage.category)}</span></b>
+          <button class="btn" id="p-close">收起</button>
+        </div>
+        <pre>${esc(state.activePage.content)}</pre>
+      </div>
+    ` : ''}
+
+    ${state.recall ? `
+      <div class="card">
+        <b>🔍 召回结果（关键词：${esc(state.recall.query)}）</b>
+        ${(state.recall.pages || []).map((p) => `<div class="item" data-page="${esc(p.id)}"><b>[知识页] ${esc(p.title)}</b><div class="badge">${esc(p.preview)}</div></div>`).join('')}
+        ${(state.recall.memories || []).map((mem) => `<div class="item"><b>[会话 ${esc(mem.source_id.slice(0, 8))}]</b><pre>${esc(mem.snippet)}</pre></div>`).join('')}
+        ${!(state.recall.pages?.length || state.recall.memories?.length) ? '<div class="badge">无匹配记录</div>' : ''}
+      </div>
+    ` : `
+      <div class="card">
+        <b>📚 项目知识页（${(s.pages || []).length}）</b>
+        ${(s.pages || []).map((p) => `
+          <div class="item" data-page="${esc(p.id)}">
+            <div class="row" style="justify-content:space-between"><b>${esc(p.title)}</b><span class="badge">${esc(p.category)} · ${esc(p.project)}</span></div>
+            <div style="color:var(--fg-2);font-size:11.5px">${esc(p.preview)}</div>
+          </div>
+        `).join('') || '<div class="badge">暂无知识页，点击「+ 新建知识页」或「索引历史会话」开始沉淀长期记忆。</div>'}
+      </div>
+    `}
+  `;
+
+  document.getElementById('q-btn').onclick = async () => {
+    state.query = document.getElementById('q-input').value.trim();
+    if (!state.query) { state.recall = null; render(); return; }
+    const sc = await callM('hindsight_recall', { query: state.query });
+    state.recall = sc.recall; render();
+  };
+  const qc = document.getElementById('q-clr');
+  if (qc) qc.onclick = () => { state.query = ''; state.recall = null; render(); };
+
+  document.querySelectorAll('[data-page]').forEach((el) => el.onclick = async () => {
+    const sc = await callM('hindsight_read_page', { page_id: el.dataset.page });
+    state.activePage = sc.page; render();
+  });
+  const pc = document.getElementById('p-close');
+  if (pc) pc.onclick = () => { state.activePage = null; render(); };
+
+  const nc = document.getElementById('n-close');
+  if (nc) nc.onclick = () => { state.showNew = false; render(); };
+  const ns = document.getElementById('n-save');
+  if (ns) ns.onclick = async () => {
+    const title = document.getElementById('n-title').value.trim();
+    const content = document.getElementById('n-content').value.trim();
+    if (!title || !content) return;
+    await callM('hindsight_ingest_document', {
+      title,
+      content,
+      category: document.getElementById('n-cat').value,
+      project: document.getElementById('n-proj').value.trim() || 'default',
+    });
+    state.showNew = false;
+    await refresh();
+  };
+}
+
+document.getElementById('ingest-btn').onclick = async () => {
+  await callM('hindsight_ingest_conversations', { limit: 20 });
+  await refresh();
+};
+document.getElementById('new-btn').onclick = () => { state.showNew = true; render(); };
+document.getElementById('ref-btn').onclick = refresh;
+
+try {
+  await app.connect();
+  applyTheme(app.getHostContext());
+  render();
+} catch (err) {
+  document.getElementById('main').innerHTML = `<div class="card">连接失败: ${esc(err?.message || err)}</div>`;
+}
+</script>
+</body>
+</html>
