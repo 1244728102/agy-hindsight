@@ -1,0 +1,12 @@
+{
+  "name": "agy-hindsight",
+  "displayName": "AGY 长期记忆",
+  "version": "0.1.0",
+  "description": "适配 Antigravity 的项目长期记忆插件（Hindsight）：自动沉淀历史会话与项目决策，提供知识页检索、记录与跨会话记忆召回。",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "打开 AGY 长期记忆面板并索引历史会话",
+    "检索当前项目的架构约定与历史决策知识页",
+    "将当前重要的项目规范或修复经验沉淀为长期记忆"
+  ]
+}
