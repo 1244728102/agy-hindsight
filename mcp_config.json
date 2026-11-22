@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "memory": {
+      "command": "python",
+      "args": [
+        "-u",
+        "${PLUGIN_ROOT}/server/mcp_server.py",
+        "--data-dir",
+        "${PLUGIN_DATA}"
+      ]
+    }
+  }
+}
